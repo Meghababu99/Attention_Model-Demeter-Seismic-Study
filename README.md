@@ -1,479 +1,277 @@
-# DEMETER LSTM-AE Seismo-Ionospheric Anomaly Detection
+# LSTM-AE for the DEMETER Seismic Study
 
-This repository contains the code structure used to rebuild and reproduce the PhD study on detecting anomalous ionospheric electric-field perturbations from DEMETER ICE satellite observations and evaluating their statistical association with global earthquakes.
+Unsupervised detection of ionospheric electric-field perturbations in DEMETER ICE satellite data with an
+LSTM autoencoder, and statistical evaluation of their association with global earthquakes (M ≥ 5.0, 2005–2010).
 
-The project is organized around an unsupervised LSTM autoencoder workflow. The model is trained on nominal/non-seismic DEMETER half-orbit sequences, detects anomalies through reconstruction error, and evaluates whether detected anomalies are spatially and temporally associated with earthquake events.
+The autoencoder learns what *normal* (non-seismic) DEMETER half-orbit sequences look like. Sequences it
+reconstructs poorly are flagged as anomalies, and each anomaly is checked against the earthquake catalogue
+with a fixed spatial and temporal window.
 
-> **Scientific scope**  
-> This repository supports a statistical anomaly-detection and seismic-association study. It does not claim deterministic earthquake prediction or direct physical causation. The detected events should be interpreted as candidate ionospheric anomalies whose association with seismicity is evaluated statistically.
+> **Scientific scope.** This is a statistical anomaly-detection and seismic-association study. It does not
+> claim deterministic earthquake prediction or a direct physical cause. Detected events are candidate
+> ionospheric anomalies whose association with seismicity is evaluated statistically.
+
+**Paper:** Babu, M., Cristoforetti, M., Battiston, R., & Iuppa, R. (2026). *Data-Driven Deep Learning Model for
+Detecting Ionospheric Electric Field Perturbations and Seismic Correlation.* Remote Sensing, 18(9), 1324.
+https://doi.org/10.3390/rs18091324
+
+---
+
+## Contents
+
+1. [Repository structure](#repository-structure)
+2. [Quick start](#quick-start)
+3. [Data](#data)
+4. [Study conditions](#study-conditions)
+5. [Training modes (A and In-A)](#training-modes-a-and-in-a)
+6. [Clean code vs. the original thesis runs](#clean-code-vs-the-original-thesis-runs)
+7. [Extension: attention, GRU and bidirectional encoders (STSM)](#extension-attention-gru-and-bidirectional-encoders-stsm)
+8. [Result files](#result-files)
+9. [Naming conventions](#naming-conventions)
+10. [Author and data credit](#author-and-data-credit)
 
 ---
 
 ## Repository structure
 
 ```text
-Demeter-/
+LSTM-AE-For-Demeter-Seismic-Study/
 │
-├── lstm/
-│   ├── __init__.py
-│   ├── dataset.py
-│   ├── scaling.py
-│   ├── models.py
-│   ├── training.py
-│   ├── training_modes.py
-│   ├── training_classifier.py
-│   ├── anomaly_detection.py
-│   ├── SeismicCriteria.py
-│   ├── Threshold_anomaly.py
-│   ├── Threshold_anomaly_WOG.py # Specific for criteria applied naming WOG - Not used in final thesis 
-│   ├── timewindow_analysis.py #Not used in the current analysis
-│   ├── fb_analyser.py #Not used in the current analysis
-│   ├── classifier_evaluation.py
-│   ├── AnomalyAnalyser.py
-│   └── out_encoder.py
-│
-├── Final-Code/
-│   ├── *.ipynb
-│   └── *.py
-│
-├── Models-Trained/
-│   ├──  SW22_TW48/
-│   └── ......
+├── Clean-Code/                                    # all code (see Clean-Code/README.md)
+│   ├── DEMETER_LSTM_AE-Training.ipynb             # rolling-window training + evaluation (baseline LSTM-AE)
+│   ├── DEMETER_LSTM_AE-Evaluation-Pretrained.ipynb # evaluates saved models, compares with saved results
+│   ├── DEMETER_STSM-Training.ipynb                # same pipeline with LSTM/GRU, Bi-, attention encoders
+│   ├── lstm/                                      # Python package used by the notebooks
+│   │   └── STSM/                                  # recurrent autoencoder with selectable cell/attention
+│   └── requirements.txt
 │
 ├── Data/
-│   ├── storm_data.pkl
-│   ├── Down_Orbits-Q3-loc-Train-limitedgrids_RES.pkl
-│   ├── Main_earthquakes.csv
-│   ├── Bg_window_data/
-│   │   ├── Background_data-window_0.pkl
-│   │   ├── Background_data-window_1.pkl
-│   │   └── ...
-│   └── RST-Lable/
-│       ├── RDM_df_train_30D-5SW-tw48_w0.csv
-│   └── Label_data/
-│       ├── summary_df_train_30D-22SW-tw48_w0.csv
-│       ├── summary_df_val_30D-22SW-tw48_w0.csv
-│       └── ...
+│   ├── EQ.csv                                     # earthquake catalogue
+│   ├── Bg_window_data/                            # background-corrected data, one file per rolling window
+│   ├── Label_data/                                # seismic (1) / non-seismic (0) label of each sequence
+│   ├── RST-Label/                                 # labels with randomised times (random baseline)
+│   ├── Descriptions/                              # DEMETER ICE and data-production documentation
+│   ├── storm_data.pkl                             # Kp, Dst, AE geomagnetic indices
+│   └── ...                                        # source and intermediate files of the study
 │
 ├── Result Files/
-├   ├──SW22_TW48/
-│   │   ├── *.csv
-│   │   └── figures/
-│   │   
-│   └── Z-factor-files/
-│       ├── *.csv
+│   ├── SW22_TW48/                                 # rolling-window results of the selected criterion
+│   ├── Z-factor-files/                            # Z-factor and mean seismic-ratio summaries
+│   └── STSM/                                      # attention vs. baseline comparison
 │
-├── README.md
-└── requirements.txt
+└── README.md
 ```
+
+Trained models are not part of the repository. To evaluate saved models, place them in
+`Models-Trained/SW22_TW48/` (see [Naming conventions](#naming-conventions)).
 
 ---
 
-## Folder descriptions
+## Quick start
 
-### `lstm/`
+**On a PC**
 
-This folder contains the reusable Python package used by the experiments.
+```bash
+pip install -r Clean-Code/requirements.txt
+```
 
-Main components:
+Open a notebook in `Clean-Code/` and set `LOCAL_PROJECT` in its first cell to the repository folder
+(default `D:\GIT\LSTM-AE-For-Demeter-Seismic-Study`).
 
-- `dataset.py`  
-  Builds paired consecutive half-orbit DEMETER sequences for LSTM input.
+**On Google Colab**
 
-- `scaling.py`  
-  Fits the scaler on nominal/non-seismic training sequences and applies the same transformation to train, validation, and test data.
+Open the notebook in Colab and run it. The first cell mounts Google Drive and uses
+`MyDrive/LSTM-AE-For-Demeter-Seismic-Study`. If that folder does not exist, the cell clones this repository
+(code and data) into it, so results are saved to Drive. Colab already has all required packages.
 
-- `models.py`  
-  Defines the LSTM autoencoder architecture and related latent-space classifier modules.
-
-- `training.py` and `training_modes.py`  
-  Contain training routines for the LSTM autoencoder, including support for autoencoder-only and classifier-assisted modes.
-
-- `anomaly_detection.py`  
-  Computes reconstruction errors and detects aggregate or frequency-band anomalies.
-
-- `SeismicCriteria.py`  
-  Defines the spatial and temporal earthquake-association criterion.
-
-- `Threshold_anomaly.py` and `Threshold_anomaly_WOG.py`  
-  Perform seismic association analysis for detected anomalies.
-
-- `timewindow_analysis.py`  
-  Evaluates anomaly-earthquake ratios. Not for the current work.
-
-- `fb_analyser.py`  
-  Performs frequency-band-specific anomaly analysis. # Not used in the current analysis
-
-- `classifier_evaluation.py` and `training_classifier.py`  
-  Support optional latent-classifier experiments.
-
-- `out_encoder.py`  
-  Plots latent representations from the trained encoder.
-
-Files with `_0` suffix are considered older backup versions and are not used as the active source code.
+| Notebook | Use it to |
+|---|---|
+| `DEMETER_LSTM_AE-Training.ipynb` | Train and evaluate the baseline LSTM autoencoder on all rolling windows |
+| `DEMETER_LSTM_AE-Evaluation-Pretrained.ipynb` | Re-evaluate saved models and check the results against `Result Files/` |
+| `DEMETER_STSM-Training.ipynb` | Train and evaluate attention / GRU / bidirectional variants under the same conditions |
 
 ---
 
-### `Final-Code/`
+## Data
 
-This folder contains runnable experiment scripts and notebooks.
+| File / folder | Content |
+|---|---|
+| `Bg_window_data/Background_data-window_{i}.pkl` | DEMETER ICE data of rolling window *i* (20 windows), indexed by time, with `lat`, `lon` and, for each of the 11 frequency bands *k*: `Q3_fb_k`, its 30-day background fit `fit_Q3_fb_k`, and the residual `Res_Q3_fb_k` |
+| `Label_data/summary_df_{train,val}_30D-{SW}SW-tw{TW}_w{i}.csv` | One row per half-orbit pair: `index`, `label` (1 seismic, 0 non-seismic), matched earthquakes. One set per spatial/temporal criterion |
+| `RST-Label/RDM_df_train_30D-{SW}SW-tw{TW}_w{i}.csv` | Same labels computed with randomised times, for the random (RST) baseline |
+| `EQ.csv` | Earthquake catalogue: `Time`, `lat`, `long`, `depth`, `mag`; 12,442 events with M ≥ 5.0, 2005–2010 |
+| `storm_data.pkl` | Geomagnetic indices `Kp`, `Dst`, `AE` (used for the storm-corrected results of the thesis) |
+| `Down_Orbits-Q3-loc-Train-limitedgrids_RES.pkl` | Full DEMETER residual data set from which the windows were built |
+| `Descriptions/` | DEMETER ICE instrument and data-production documentation |
 
-It should include both:
-
-```text
-*.py
-*.ipynb
-```
-
- experiment files include:
-
-- rolling-window LSTM-AE training;
-- weight-updating mode experiments;
-- weight-reinitialising mode experiments;
-- trained-model reloading and result generation;
-- anomaly-threshold analysis;
-- seismic-association evaluation;
-- plotting and result-summary scripts.
-### `Final-Code/NOA`
-
-This folder contains runnable experiment scripts and notebooks used for the SAO exploere ionogram data.
-
-- SWARM folder contains the shared files for the swarm-ionogram # We havnt used it yet
-- SAO_P, SAO, APP, _Fileds python files are the fuctions defnitions needed for reading the SAO files in the naming format "MHJ45_20050321(080)000000.SAO"
-- Data Reader & pkl conversion -" SAO-Parsing_Data-Exampleipynb"
-- Debugging sections - SAO-Parsing_Dataipynb {Use the data description file for better understanding}
-- Staion_pkl-Correction.ipynb - Where two files of diff period of data of same station is combined
-- SW22_48-NOA-Matching.ipynb - Spatial & Temporal Coincidences of the Demeter ANomalies & Ionosonde soundings
-- NOA-Digisonde_Background-PLOT.ipynb - Background nature of each ionosonde stations
-
-
-
-### `Models/`
-
-This folder stores trained model files and training checkpoints.
-
-
-```text
-Model-Trained/
-├── SW22_TW48/
-│   ├── best_model_Hp_tw48-30dBG_A_w0.pth
-│   ├── best_model_Hp_tw48-30dBG_A_w1.pth
-│   └── ...
-└── SW05_TW48/
-    ├── best_model_Hp_tw48-30dBG_A_w0.pth
-    ├── best_model_Hp_tw48-30dBG_In-A_w0.pth
-    └── ...
-```
-
-Model naming convention:
-`Each models tained is saved on folders of corresponding window criteria`
-```text
-best_model_Hp_tw{TW}-30dBG_{MODEL}_w{WINDOW}.pth
-```
-
-Example:
-
-```text
-best_model_Hp_tw48-30dBG_A_w0.pth
-```
-
-where:
-
-- `tw48` means a 48-hour temporal window;
-- `30dBG` means 30-day resampled background-corrected data;
-- `A` means weight-updating mode;
-- `In-A` means weight-reinitialising mode;
-- `w0`, `w1`, ... indicate rolling-window index.
+The model input is the 11 residual features `Res_Q3_fb_1` … `Res_Q3_fb_11`. Raw `Q3_*` columns are dropped.
 
 ---
 
-### `Data/`
+## Study conditions
 
-This folder stores all data used in the study.
+These are the conditions used by the notebooks in `Clean-Code/`. Values are set in each notebook's
+**Settings** cell.
 
-Large raw/intermediate data files are expected to be stored locally and should normally not be committed to GitLab unless the repository is private and storage rules allow it.
+### 1. Rolling windows
 
-Main data files:
+| Setting | Value |
+|---|---|
+| Training period | 12 months |
+| Validation period | the 3 months right after the training period |
+| Stride | 3 months (validation periods do not overlap; training periods do) |
+| Range | from 2005-01-01: 16 windows up to 2010-01-02 (baseline), 20 windows up to 2011-01-02 (STSM) |
+| Background | each window has its own 30-day background-corrected data file (`30dBG` in file names) |
 
-```text
-Data/
-├── storm_data.pkl
-├── Down_Orbits-Q3-loc-Train-limitedgrids_RES.pkl
-├── Main_earthquakes.csv
-```
+### 2. Sequences (model input)
 
-Expected contents:
+| Setting | Value |
+|---|---|
+| Half-orbit | data split wherever the time gap exceeds **1 hour** |
+| Length | the first **17 samples** of each half-orbit (shorter half-orbits are dropped) |
+| Pair | consecutive half-orbits (0–1, 2–3, …) whose start times are at most **2 hours** apart |
+| Features | 11 residual bands `Res_Q3_fb_1…11` |
 
-- `storm_data.pkl`  
-  Geomagnetic index data used for storm correction.
+Each pair is one sequence of 2 × 17 = 34 samples. The autoencoder is applied to each half-orbit separately
+(17 × 11), and the pair's error is the mean of the two.
 
-- `Down_Orbits-Q3-loc-Train-limitedgrids_RES.pkl`  
-  Main DEMETER residual time-series dataframe containing location and frequency-band features (Q3 - `only consider Q3 and location - niothing else is needed`).
+### 3. Seismic criterion and labels
 
--  `EQ.csv`  
-  Earthquake catalogue used for seismic association analysis.
+A sequence is **seismic** if at least one earthquake (M ≥ 5.0) lies:
 
----
+- inside a **22° × 22°** square (spatial width `sw = 22`) centred on any of the sequence's 34 locations, and
+- within **48 hours** (`tw = 48`) after the sequence's last timestamp.
 
-### `Data/Bg_window_data/`
+The label files apply this criterion in advance; `label = 0` marks normal sequences. Label files for other
+criteria are also in `Label_data/`: SW 5°, 10°, 20° (`30D-tw48`, `20SW_full`), rectangles 20° × 22° and
+20° × 23°, and TW 6 h and 12 h with SW 22°.
 
-This folder stores rolling-window background-corrected DEMETER data.
+### 4. Scaling
 
-Example files:
+A `StandardScaler` is fitted **only on the normal (label-0) training pairs** of the window and applied to
+all train and validation pairs.
 
-```text
-Background_data-window_0.pkl
-Background_data-window_1.pkl
-Background_data-window_2.pkl
-...
-```
+### 5. Model
 
-Each file corresponds to a rolling-window background correction and is used to extract:
+| Setting | Value |
+|---|---|
+| Encoder | 2-layer LSTM (input 11, hidden 8); the last hidden state of the top layer → linear layer → latent vector of size **2** |
+| Decoder | latent vector repeated over the 17 time steps → 2-layer LSTM (hidden 8) → linear layer → 11 features |
+| Loss | mean squared error, averaged over the two half-orbits of a pair |
 
-- 12 months of training data;
-- 3 months of validation data.
+### 6. Training
 
----
+| Setting | Value |
+|---|---|
+| Training data | normal (label-0) training pairs only |
+| Early stopping | on the normal (label-0) validation pairs; patience 150 epochs |
+| Optimiser | Adam, learning rate 0.001, batch size 8, shuffled |
+| Saved model | the model at the epoch where training stopped |
+| Warm start | mode A: window *i > 0* starts from the model of window *i − 1* (see below) |
+| Seed | 201894 (Python, NumPy, PyTorch) |
 
-### `Data/Label_data/`
+### 7. Anomaly detection
 
-This folder stores the precomputed seismic/non-seismic sequence label files.
+| Setting | Value |
+|---|---|
+| Score | aggregate reconstruction error (MSE) of each pair, computed one pair at a time |
+| Data | **all** train and validation pairs (seismic and non-seismic) |
+| Threshold | **98th percentile** of the training errors of the window; the same threshold is applied to validation |
+| Anomaly | error ≥ threshold |
 
-Example files:
+### 8. Seismic association
 
-```text
-summary_df_train_30D-22SW-tw48_w0.csv
-summary_df_val_30D-22SW-tw48_w0.csv
-summary_df_train_30D-22SW-tw48_w1.csv
-summary_df_val_30D-22SW-tw48_w1.csv
-...
-```
-`Other than sw = 20, every other files have the above format with its spatial width mentioned`
+For each split (train, validation) of each window, with *n* anomalies of which *k* are seismic:
 
-These files label each paired half-orbit sequence as:
+| Quantity | Definition |
+|---|---|
+| Seismic ratio *p* | *k / n*; when *k = n* it is (*k* − 1) / *n*, and when *k* = 0 it is 1 / *n* |
+| Ratio (%) `agg_value` | 100 · *p* |
+| Error (%) `agg_error` | 100 · √(*p*(1 − *p*) / *n*) (binomial) |
+| Matched earthquakes `agg_total_eq` | number of distinct earthquakes matched by the anomalies |
 
-- `0`: non-seismic / nominal sequence;
-- `1`: seismic-associated sequence under the selected spatial-temporal criterion.
-
-The expected naming convention is:
-
-```text
-summary_df_{split}_30D-{SW}SW-tw{TW}_w{WINDOW}.csv
-```
-
-Example:
-
-```text
-SW =22
-summary_df_train_30D-22SW-tw48_w0.csv
-```
-
----
-### `Data/RST-Label/`
-
-This folder stores the precomputed seismic/non-seismic sequence label files applying the randomisation in time (this data can be used for the RST baseline calculation).
-
-Example files:
-
-```text
- RDM_df_train_30D-5SW-tw48_w0.csv
- RDM_df_train_30D-5SW-tw48_w1.csv
-...
-```
-
-
-
-### `Result Files/` 
-
-This folder contains the major output files produced during the study.
-
-Expected contents include:
-
-```text
-Results/
-├── SW22_TW48
-  └── Retrain_result_Hp_B-tw48-30dBG_In-A.csv
-  └── Blind
-      └── Retrain_result_Hp_B1-tw48-30dBG_In-A.csv
-```
-Z-factor-files/
-│       ├── *.csv
-
-Provides the results of Z-factor analysis and average seismic anomaly ratio analysis fro all models individually and compined under each SW-TW Criteria
-
-## Main workflow
-
-The standard workflow is:
-
-1. Load DEMETER residual Q3 data.
-2. Load rolling-window background-corrected data.
-3. Load earthquake catalogue.
-4. Load or generate seismic/non-seismic sequence labels.
-5. Build paired consecutive half-orbit sequences.
-6. Fit scaler using only nominal/non-seismic training sequences.
-7. Train or reload LSTM autoencoder models.
-8. Compute reconstruction errors.
-9. Apply percentile-based anomaly threshold.
-10. Evaluate seismic association of anomalies.
-11. Save anomaly indices, seismic indices, matched earthquake details, and final summary tables.
+These ratios are compared with the random baseline (`RST-Label/`) and summarised as Z-factors in
+`Result Files/Z-factor-files/`.
 
 ---
 
-## Training modes
+## Training modes (A and In-A)
 
-Two model-training modes are supported.
+| Mode | Window 0 | Window *i > 0* | Purpose |
+|---|---|---|---|
+| **A** (weight updating) | random initialisation | starts from the model of window *i − 1* | keeps learning continuous across windows |
+| **In-A** (re-initialising) | random initialisation | random initialisation | tests that the association does not depend on carried-over weights |
 
-### A mode: weight updating
-
-In this mode, each rolling window after the first starts from the previous window's best model.
-
-
-Conceptually:
-
-```text
-w0: random initialization
-w1: initialize from best model of w0
-w2: initialize from best model of w1
-...
-```
-
-This mode preserves learning continuity across rolling windows.
+Set `WARM_START = True` (A) or `False` (In-A) in the notebook. The mode appears in every file name
+(`…30dBG_A…` or `…30dBG_In-A…`).
 
 ---
 
-### In-A mode: weight reinitialising
+## Clean code vs. the original thesis runs
 
-In this mode, every rolling window starts from newly initialized weights.
+The code in `Clean-Code/` is a cleaned version of the thesis code: unused functions and repeated code were
+removed, without changing the method. Running `DEMETER_LSTM_AE-Evaluation-Pretrained.ipynb` with the saved
+thesis models (`tw48-30dBG_A`, 16 windows) reproduces `Result Files/SW22_TW48/Retrain_result_Hp_B-tw48-30dBG_A.csv`
+exactly (32 of 32 rows: anomalies, ratios, errors, matched earthquakes and seismic indices).
 
-Conceptually:
+Two conditions differ from the thesis runs **when training new models**:
 
-```text
-w0: random initialization
-w1: random initialization
-w2: random initialization
-...
-```
-
-This mode tests whether the detected association is reproducible without carrying weights from previous windows.
-
----
-
-## Running with already trained models
-
-If trained models already exist under:
-
-```text
-Models-Trained/SW22_TW48/
-```
-
-the experiment notebook or script can skip training and directly reload models.
-
-
-## Important configuration example
-
-A typical configuration for the selected SW22/TW48 experiment is:
-
-```python
-SW = 22
-TW = 48
-
-
-HIDDEN_SIZE = 8
-NUM_LAYERS = 2
-LATENT_DIM = 2
-INPUT_SIZE = 11
-
-PC = 98
-```
+| | Thesis runs | Clean code |
+|---|---|---|
+| Early-stopping validation set | all validation pairs | normal (label-0) validation pairs only |
+| Storm correction | an extra result set (`*_sc` columns) excluded sequences overlapping geomagnetic storms (Dst < −50 nT, Kp > 3 or AE > 500 nT) | not applied |
 
 ---
 
-## Output naming conventions
+## Extension: attention, GRU and bidirectional encoders (STSM)
 
-Final result CSV:
+`DEMETER_STSM-Training.ipynb` runs the same pipeline with other encoders. Only the model changes, plus
+**20 windows** and a **cosine-annealed learning rate** (`CosineAnnealingLR`, T_max = 50). The other
+conditions are the same as above.
 
-```text
-Retrain_result_Hp_SW{SW}-tw{TW}-30dBG_{MODEL}.csv
-```
+| Option | Choices |
+|---|---|
+| Recurrent cell | `LSTM`, `GRU` |
+| Direction | unidirectional, bidirectional (`Bi…`) |
+| Encoder summary | last hidden state; **TA**: temporal attention (softmax-weighted sum over the 17 time steps); **FTA**: feature attention over the 11 bands, then temporal attention |
 
-Examples:
-
-```text
-Retrain_result_Hp_SW22-tw48-30dBG_A.csv
-Retrain_result_Hp_SW22-tw48-30dBG_In-A.csv
-```
-
-Best model checkpoint:
-
-```text
-best_model_Hp_tw{TW}-30dBG_{MODEL}_w{WINDOW}.pth
-```
-
-Example:
-
-```text
-best_model_Hp_tw48-30dBG_A_w0.pth
-```
----
-
-## Reproducibility notes
-
-For strict reproducibility, the following must match between training and result generation:
-
-- DEMETER input dataframe;
-- rolling-window background-corrected files;
-- seismic label CSV files;
-- train/validation date boundaries;
-- feature columns;
-- scaler fitting procedure;
-- model architecture;
-- hidden size;
-- number of LSTM layers;
-- latent dimension;
-- anomaly threshold percentile;
-- spatial window;
-- temporal window;
-
-The scaler is fitted only on nominal/non-seismic training data. If the label files or training data change, reconstruction errors and anomaly indices may also change.
-
-
-## Example execution
-
-Run the notebook:
-
-```text
-Experiments/DEMETER_Rolling_Training_A_InA_load_existing.ipynb
-```
-
-or execute the Python script:
-
-``` In Cluster
-Make an SH Source file file wiht requried GPU and memory specification and location of experiment file. 
-example file - Retraining_Hp-B.sh
-sbatch Retraining_Hp-B.sh
-```
-
-Before running, check the following paths in the configuration section:
-
-```python
-DEMETER_ROOT = Path to the folder
-DATA_DIR = DEMETER_ROOT / "Data"
-MODEL_DIR = DEMETER_ROOT / "Models-Trained"
-RESULT_DIR = DEMETER_ROOT / "Result Files"
-```
+Each model writes to `Clean-Code/STSM-Results/<model>/<run label>/`, e.g. `BiGRU-FTA/tw48-30dBG_A-BiGRU-FTA/`.
+Details are in [`Clean-Code/README.md`](Clean-Code/README.md).
 
 ---
 
-## Author
+## Result files
 
-**Megha Babu**  
-PhD Researcher
-Research topic: data-driven deep-learning analysis of ionospheric electric-field perturbations and seismic association.
+| Folder | Content |
+|---|---|
+| `Result Files/SW22_TW48/Retrain_result_Hp_B-tw48-30dBG_{A…E, In-A…In-E}.csv` | Rolling-window results of the thesis models (SW 22°, TW 48 h): one Val and one Train row per window; `*_sc` columns are storm-corrected |
+| `Result Files/SW22_TW48/Blind/` | Blind-test evaluation outputs (`Accuracy_*.csv`) |
+| `Result Files/Z-factor-files/` | Z-factor and mean seismic-ratio summaries for each model and each SW–TW criterion |
+| `Result Files/STSM/` | Temporal-attention results and the attention vs. baseline comparison |
 
-Data Science for Industry and Physics - Bruno Kessler Foundation, Italy
-Department of Physics - University of Trento, Italy
+---
 
-## Reference 
-The DEMETER data has to be cited as per the Source website : https://cdpp-archive.cnes.fr/
+## Naming conventions
 
-- JOURNAL PAPER - Babu, M., Cristoforetti, M., Battiston, R., & Iuppa, R. (2026). Data-Driven Deep Learning Model for Detecting Ionospheric Electric Field Perturbations and Seismic Correlation. Remote Sensing, 18(9), 1324. https://doi.org/10.3390/rs18091324
+```text
+best_model_Hp_tw{TW}-30dBG_{MODE}_w{WINDOW}.pth     e.g. best_model_Hp_tw48-30dBG_A_w0.pth
+result_Hp_tw{TW}-30dBG_{MODE}.csv                   e.g. result_Hp_tw48-30dBG_In-A.csv
+```
+
+| Part | Meaning |
+|---|---|
+| `tw48` | 48-hour temporal window |
+| `30dBG` | 30-day background-corrected data |
+| `A`, `In-A` | run name (`A`–`E` in the thesis results); the `In-` prefix marks re-initialising mode, no prefix weight-updating mode |
+| `w0`, `w1`, … | rolling-window index |
+| `-LSTM-TA`, `-BiGRU-FTA`, … | STSM runs: model name added to the run label |
+
+---
+
+## Author and data credit
+
+**Megha Babu**. Data Science for Industry and Physics, Fondazione Bruno Kessler, and Department of Physics,
+University of Trento, Italy.
+
+DEMETER data are provided by CNES/CDPP and must be cited as required by the source:
+https://cdpp-archive.cnes.fr/
