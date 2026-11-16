@@ -14,6 +14,16 @@ loop over windows → results. They differ only in how the model of each window 
 | `DEMETER_LSTM_AE-Evaluation-Pretrained.ipynb` | loaded from `Models-Trained/SW22_TW48/` | `outputs_pretrained/<run label>/` |
 | `DEMETER_STSM-Training.ipynb` | trained, for each model in `MODELS` | `STSM-Results/<model>/<run label>/` |
 
+`DEMETER_STSM-Results-Analysis.ipynb` analyses the results of one STSM model (`MODEL_NAME`) for all runs
+(A–E, In-A–In-E): per-window ratio and anomaly plots, Z-factor and average ratio against the random baseline
+(RST), and comparison with the baseline LSTM-AE results in `Result Files/SW22_TW48/`. It writes to
+`Result Files/STSM-Results/<model>/Analysis_results/`.
+
+`DEMETER_STSM-Evaluation-NormalThreshold.ipynb` re-evaluates saved best models without training, with the
+anomaly threshold taken from the normal (label-0) training pairs. It evaluates the STSM model and the baseline
+LSTM-AE (thesis models in `Models-Trained/SW22_TW48/`) and writes `<model>-NormalThr` results. Analyse them with
+`MODEL_NAME = "LSTM-TA-NormalThr"` and `BASELINE_NAME = "LSTM-AE-NormalThr"` in the analysis notebook.
+
 ### Main settings
 
 | Setting | Meaning |
@@ -62,6 +72,7 @@ attention models from the thesis code can be loaded directly.
 | `SeismicCriteria.py` | `SeismicCriteria.is_eq`: earthquakes inside the spatial square and time window |
 | `Threshold_anomaly.py` | `SeismicAnalysis.agg_analysis`: seismic anomalies and matched earthquakes |
 | `pipeline.py` | steps shared by the notebooks: `generate_windows`, `load_eq_catalog`, `prepare_window`, `train_window`, `process_split`, `run_seismic_analysis`, `plot_error_distributions`, `evaluate_window` |
+| `analysis.py` | results analysis: `rst_levels`, `z_factor`, `paired_validation`, `compare_with_baseline`, `compare_z` and the plots |
 | `STSM/models.py` | `RecurrentAutoencoder` (LSTM/GRU, uni/bidirectional, none/TA/FTA) and `model_name` |
 
 ## Outputs of one run

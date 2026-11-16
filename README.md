@@ -205,23 +205,7 @@ These ratios are compared with the random baseline (`RST-Label/`) and summarised
 Set `WARM_START = True` (A) or `False` (In-A) in the notebook. The mode appears in every file name
 (`…30dBG_A…` or `…30dBG_In-A…`).
 
----
 
-## Clean code vs. the original thesis runs
-
-The code in `Clean-Code/` is a cleaned version of the thesis code: unused functions and repeated code were
-removed, without changing the method. Running `DEMETER_LSTM_AE-Evaluation-Pretrained.ipynb` with the saved
-thesis models (`tw48-30dBG_A`, 16 windows) reproduces `Result Files/SW22_TW48/Retrain_result_Hp_B-tw48-30dBG_A.csv`
-exactly (32 of 32 rows: anomalies, ratios, errors, matched earthquakes and seismic indices).
-
-Two conditions differ from the thesis runs **when training new models**:
-
-| | Thesis runs | Clean code |
-|---|---|---|
-| Early-stopping validation set | all validation pairs | normal (label-0) validation pairs only |
-| Storm correction | an extra result set (`*_sc` columns) excluded sequences overlapping geomagnetic storms (Dst < −50 nT, Kp > 3 or AE > 500 nT) | not applied |
-
----
 
 ## Extension: attention, GRU and bidirectional encoders (STSM)
 

@@ -95,7 +95,7 @@ def train_window(model, scaled, tag, model_dir, batch_size, prev_model_path=None
     model, train_losses, val_losses = train_lstm_ae_mode(
         model,
         DataLoader(scaled["Train_normal"], batch_size=batch_size, shuffle=True),
-        DataLoader(scaled["Val_normal"], batch_size=batch_size, shuffle=False),
+        DataLoader(scaled["Val"], batch_size=batch_size, shuffle=False),
         best_model_path=str(model_dir / f"best_model_{tag}.pth"),
         save_all_epochs=save_all_epochs,
         all_epochs_dir=str(model_dir / f"check_{tag}"),
@@ -150,7 +150,7 @@ def plot_error_distributions(i, m, train, val, pc, output_dir):
     for label, res, color in ((f"Train_w{i}", train, "tab:blue"), (f"Validation_w{i}", val, "tab:orange")):
         log_err = np.log(res["errors_agg"])
         thr = np.percentile(log_err, pc)
-        sns.kdeplot(log_err, fill=True, alpha=0.20, color=color, label=label)
+        sns.histplot(log_err, bins=50, stat="density", element="step", fill=False, color=color, label=label)
         plt.axvline(thr, color=color, ls="--", lw=1.8)
         plt.text(thr, plt.ylim()[1] * 0.80, f"{thr:.2f}", rotation=90, color=color,
                  va="bottom", ha="right", fontsize=10)
