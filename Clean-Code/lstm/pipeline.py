@@ -110,12 +110,16 @@ def train_window(model, scaled, tag, model_dir, batch_size, prev_model_path=None
     }).to_csv(model_dir / f"loss_history_{tag}.csv", index=False)
     return model
 
-
-def process_split(model, dataloader, threshold_agg=None, threshold_percentile=None):
+def process_split(model, dataloader, threshold_agg=None, threshold_percentile=None, match_a_rng=False):
     """Aggregate reconstruction errors and anomalies. Threshold = given value or percentile of these errors."""
     detector = AnomalyDetector(model)
-    
     errors_agg = detector.compute_reconstruction_errors_agg(dataloader)
+    if match_a_rng:
+        # Notebook A also computes per-feature errors here (one more pass over the loader).
+        # Every DataLoader pass consumes one torch random number; repeating the pass keeps
+        # the shuffle order of the next window identical to A. Results are not affected.
+        for _ in dataloader:
+            pass
     if threshold_agg is None:
         threshold_agg = np.percentile(errors_agg, threshold_percentile)
     return {
@@ -123,7 +127,6 @@ def process_split(model, dataloader, threshold_agg=None, threshold_percentile=No
         "threshold_agg": threshold_agg,
         "anomalies_agg": detector.detect_anomalies_agg(errors_agg, threshold_agg),
     }
-
 
 def run_seismic_analysis(split_df, dataset, eq, seismic_criteria, anomalous_indices):
     """Percentage of anomalous sequences that are seismic, its binomial error, and matched earthquakes."""
