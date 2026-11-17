@@ -114,6 +114,7 @@ def train_window(model, scaled, tag, model_dir, batch_size, prev_model_path=None
 def process_split(model, dataloader, threshold_agg=None, threshold_percentile=None):
     """Aggregate reconstruction errors and anomalies. Threshold = given value or percentile of these errors."""
     detector = AnomalyDetector(model)
+    
     errors_agg = detector.compute_reconstruction_errors_agg(dataloader)
     if threshold_agg is None:
         threshold_agg = np.percentile(errors_agg, threshold_percentile)
@@ -163,8 +164,7 @@ def plot_error_distributions(i, m, train, val, pc, output_dir):
     plt.savefig(Path(output_dir) / f"Aggregate_Errordistribution-pc{pc}-HP_m{m}_w{i}.png", dpi=300, bbox_inches="tight")
     plt.close()
 
-
-def evaluate_window(i, w, model, splits, datasets, scaled, eq, seismic_criteria, pc, m, output_dir):
+def evaluate_window(i, w, model, splits, datasets, scaled, eq, seismic_criteria, pc, m, output_dir, match_a_rng=False):
     """
     Evaluate a trained model on all train and validation pairs of window i.
     The anomaly threshold is the pc-th percentile of the training errors.
@@ -172,8 +172,14 @@ def evaluate_window(i, w, model, splits, datasets, scaled, eq, seismic_criteria,
     Returns:
         Two result rows (Val, Train).
     """
-    train = process_split(model, DataLoader(scaled["Train"], batch_size=1), threshold_percentile=pc)
-    val = process_split(model, DataLoader(scaled["Val"], batch_size=1), threshold_agg=train["threshold_agg"])
+
+    train = process_split(model, DataLoader(scaled["Train"], batch_size=1),
+                          threshold_percentile=pc, match_a_rng=match_a_rng)
+    val = process_split(model, DataLoader(scaled["Val"], batch_size=1),
+                        threshold_agg=train["threshold_agg"], match_a_rng=match_a_rng)
+
+    # train = process_split(model, DataLoader(scaled["Train"], batch_size=1), threshold_percentile=pc)
+    # val = process_split(model, DataLoader(scaled["Val"], batch_size=1), threshold_agg=train["threshold_agg"])
     plot_error_distributions(i, m, train, val, pc, output_dir)
 
     rows = []
